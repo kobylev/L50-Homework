@@ -12,12 +12,15 @@ def generate_signals(seed, fs=1000, duration=10):
     noisy_signals = []
     
     for f in FREQS:
-        clean = np.sin(2 * np.pi * f * t)
-        clean_signals.append(clean)
-        
         # Independent noise per frequency: amplitude (0.8-1.2) and phase (0-2pi)
         amp = np.random.uniform(0.8, 1.2)
         phase = np.random.uniform(0, 2 * np.pi)
+        
+        # The clean target must incorporate the phase shift, otherwise it's impossible 
+        # to predict across independent test sets.
+        clean = np.sin(2 * np.pi * f * t + phase)
+        clean_signals.append(clean)
+        
         noisy = amp * np.sin(2 * np.pi * f * t + phase)
         noisy_signals.append(noisy)
         
@@ -27,6 +30,10 @@ def generate_signals(seed, fs=1000, duration=10):
     # Combined signal: Sum and normalize by 4
     combined_noisy = np.sum(noisy_signals, axis=0) / 4.0
     combined_clean = np.sum(clean_signals, axis=0) / 4.0
+    
+    # Normalization logic fix: The individual clean signals must also be normalized
+    # by 4 to match the scale of the composite signal, ensuring proper MSE convergence.
+    clean_signals = clean_signals / 4.0
     
     return t, clean_signals, combined_noisy, combined_clean
 
@@ -58,12 +65,16 @@ class SignalDataset(Dataset):
         return torch.tensor(x), torch.tensor(y)
 
 def get_dataloaders(batch_size=64, L=1):
-    # Train set generation
-    t_train, clean_train, noisy_train, c_clean_train = generate_signals(SEED, FS, DURATION)
-    # Test set generation with a separate seed for independence
-    t_test, clean_test, noisy_test, c_clean_test = generate_signals(SEED + 999, FS, DURATION)
+    # Generate multiple independent 10s sequences to provide phase diversity
+    # and prevent the model from memorizing a single static phase relationship.
+    train_datasets = []
+    for i in range(20): # 200 seconds of diverse phase combinations
+        t, c_clean, c_noisy, _ = generate_signals(SEED + i, FS, DURATION)
+        train_datasets.append(SignalDataset(c_noisy, c_clean, WINDOW_SIZE, samples_per_freq=200))
     
-    train_dataset = SignalDataset(noisy_train, clean_train, WINDOW_SIZE, samples_per_freq=2000)
+    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+    
+    t_test, clean_test, noisy_test, c_clean_test = generate_signals(SEED + 999, FS, DURATION)
     test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
     
     # shuffle is required to be False for L > 1 to avoid hidden state leakage across non-contiguous windows
@@ -73,8 +84,8 @@ def get_dataloaders(batch_size=64, L=1):
     
     # Foundational plots
     plt.figure(figsize=(12, 4))
-    plt.plot(t_train[:1000], c_clean_train[:1000], label='Combined Clean', alpha=0.8)
-    plt.plot(t_train[:1000], noisy_train[:1000], label='Combined Noisy (Inputs)', alpha=0.5, linestyle='--')
+    plt.plot(t_test[:1000], c_clean_test[:1000], label='Combined Clean', alpha=0.8)
+    plt.plot(t_test[:1000], noisy_test[:1000], label='Combined Noisy (Inputs)', alpha=0.5, linestyle='--')
     plt.title("Combined Clean vs. Combined Noisy (Normalized by 4)")
     plt.legend()
     plt.grid(True)
@@ -86,8 +97,9 @@ def get_dataloaders(batch_size=64, L=1):
 def get_test_loader_fn(batch_size=64):
     """Returns a function that generates a test loader for a specific seed."""
     def _get_test_loader(seed):
+        # We also generate a richer test set for evaluation
         _, clean_test, noisy_test, _ = generate_signals(seed, FS, DURATION)
-        test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
+        test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=250)
         return DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     return _get_test_loader
 

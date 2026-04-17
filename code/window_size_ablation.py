@@ -47,21 +47,31 @@ def train_for_window(window_size):
     return val_losses
 
 def main():
-    print("Running Window Size Ablation (W=10 vs W=100)...")
-    val_loss_10 = train_for_window(10)
-    val_loss_100 = train_for_window(100)
+    print("Running Window Size Ablation (W=10, 50, 100)...")
+    window_sizes = [10, 50, 100]
+    final_mses = []
+    
+    for w in window_sizes:
+        print(f"Training for window size {w}...")
+        val_losses = train_for_window(w)
+        # Average of the last 5 epochs to stabilize metric
+        final_mse = np.mean(val_losses[-5:])
+        final_mses.append(final_mse)
+        print(f"Final Validation MSE for W={w}: {final_mse:.6f}")
     
     plt.figure(figsize=(8, 5))
-    plt.plot(val_loss_10, label='WINDOW_SIZE = 10', color='red', linestyle='--')
-    plt.plot(val_loss_100, label='WINDOW_SIZE = 100', color='blue')
-    plt.title('Validation Loss: Window Size 10 vs 100')
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Squared Error (MSE)')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(DOCS_DIR, 'window_size_comparison.png'))
+    plt.bar([str(w) for w in window_sizes], final_mses, color=['red', 'orange', 'blue'])
+    plt.title('Validation MSE vs Window Size')
+    plt.xlabel('Temporal Window Size (samples)')
+    plt.ylabel('Final Mean Squared Error (MSE)')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    for i, mse in enumerate(final_mses):
+        plt.text(i, mse + 0.001, f"{mse:.4f}", ha='center')
+        
+    plt.savefig(os.path.join(DOCS_DIR, 'window_size_ablation.png'))
     plt.close()
-    print("Saved window_size_comparison.png")
+    print("Saved docs/window_size_ablation.png")
 
 if __name__ == "__main__":
     main()

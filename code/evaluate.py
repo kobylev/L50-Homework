@@ -70,75 +70,68 @@ def evaluate_all_frequencies(model, test_loader_fn, seeds=[42, 101, 202, 303, 40
 
 def run_ablation_study(model, test_loader):
     """
-    Empirically identifies hidden units sensitive to 1Hz dynamics, prunes them, 
-    and visualizes the degradation in signal extraction.
+    Empirically identifies hidden units sensitive to specific dynamics, prunes them, 
+    and visualizes the degradation in signal extraction across all frequencies.
     """
-    print("\nExecuting Ablation Study...")
+    print("\nExecuting Comprehensive Ablation Study for all frequencies...")
     model.eval()
     model.to(DEVICE)
     
-    # Collect activations for 1Hz vs others
-    activations_1hz = []
-    activations_other = []
-    target_f_idx = 0 # 1Hz
-    
-    # For visualization
-    x_1hz = None
-    y_1hz_clean = None
-
-    with torch.no_grad():
-        for inputs, targets in test_loader:
-            inputs = inputs.to(DEVICE)
-            # Forward through LSTM but not FC
-            h_seq, _ = model.lstm(inputs)
-            # Shape: (Batch, Seq, Hidden)
-            
-            for i in range(inputs.size(0)):
-                f_idx = torch.argmax(inputs[i, 0, 1:]).item()
-                # Average activation across the sequence for each hidden unit
-                avg_act = torch.mean(torch.abs(h_seq[i]), dim=0).cpu().numpy()
-                
-                if f_idx == target_f_idx:
-                    activations_1hz.append(avg_act)
-                    if x_1hz is None:
-                        x_1hz = inputs[i:i+1]
-                        y_1hz_clean = targets[i, :, 0].cpu().numpy()
-                else:
-                    activations_other.append(avg_act)
-            if len(activations_1hz) > 50 and len(activations_other) > 150:
-                break
-
-    # Calculate difference in mean activations
-    mean_1hz = np.mean(activations_1hz, axis=0)
-    mean_other = np.mean(activations_other, axis=0)
-    diff = mean_1hz - mean_other
-    
-    # Top 20 units most specialized for 1Hz
-    target_units = np.argsort(diff)[-20:]
-    
-    # Inference BEFORE pruning
-    with torch.no_grad():
-        out_before, _ = model(x_1hz)
-        y_before = out_before[0, :, 0].cpu().numpy()
-    
-    # Inference AFTER pruning
-    import copy
-    pruned_model = copy.deepcopy(model)
-    pruned_model.prune_units(target_units)
-    with torch.no_grad():
-        out_after, _ = pruned_model(x_1hz)
-        y_after = out_after[0, :, 0].cpu().numpy()
+    for f_idx, target_freq in enumerate(FREQS):
+        # Collect activations
+        activations_target = []
+        activations_other = []
         
-    # Plotting
-    plt.figure(figsize=(10, 6))
-    plt.plot(y_1hz_clean, label='Clean 1Hz Ground Truth', color='blue', alpha=0.4)
-    plt.plot(y_before, label='Prediction (Before Pruning)', color='red', linestyle='--')
-    plt.plot(y_after, label='Prediction (After Targeted Pruning)', color='black', linewidth=2)
-    plt.title("Ablation Study: Targeted Suppression of 1Hz Extraction")
-    plt.xlabel("Timesteps")
-    plt.ylabel("Amplitude")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(DOCS_DIR, 'ablation_plot.png'))
-    plt.close()
-    print("Ablation evidence saved to docs/ablation_plot.png")
+        x_target = None
+        y_target_clean = None
+
+        with torch.no_grad():
+            for inputs, targets in test_loader:
+                inputs = inputs.to(DEVICE)
+                h_seq, _ = model.lstm(inputs)
+                
+                for i in range(inputs.size(0)):
+                    curr_f_idx = torch.argmax(inputs[i, 0, 1:]).item()
+                    avg_act = torch.mean(torch.abs(h_seq[i]), dim=0).cpu().numpy()
+                    
+                    if curr_f_idx == f_idx:
+                        activations_target.append(avg_act)
+                        if x_target is None:
+                            x_target = inputs[i:i+1]
+                            y_target_clean = targets[i, :, 0].cpu().numpy()
+                    else:
+                        activations_other.append(avg_act)
+                        
+                if len(activations_target) > 50 and len(activations_other) > 150:
+                    break
+
+        mean_target = np.mean(activations_target, axis=0)
+        mean_other = np.mean(activations_other, axis=0)
+        diff = mean_target - mean_other
+        
+        target_units = np.argsort(diff)[-20:]
+        
+        with torch.no_grad():
+            out_before, _ = model(x_target)
+            y_before = out_before[0, :, 0].cpu().numpy()
+        
+        import copy
+        pruned_model = copy.deepcopy(model)
+        pruned_model.prune_units(target_units)
+        with torch.no_grad():
+            out_after, _ = pruned_model(x_target)
+            y_after = out_after[0, :, 0].cpu().numpy()
+            
+        plt.figure(figsize=(10, 6))
+        plt.plot(y_target_clean, label=f'Clean {target_freq}Hz Ground Truth', color='blue', alpha=0.4)
+        plt.plot(y_before, label='Prediction (Before Pruning)', color='red', linestyle='--')
+        plt.plot(y_after, label='Prediction (After Targeted Pruning)', color='black', linewidth=2)
+        plt.title(f"Ablation Study: Targeted Suppression of {target_freq}Hz Extraction")
+        plt.xlabel("Timesteps")
+        plt.ylabel("Amplitude")
+        plt.legend()
+        plt.grid(True)
+        plot_path = os.path.join(DOCS_DIR, f'ablation_{target_freq}Hz.png')
+        plt.savefig(plot_path)
+        plt.close()
+        print(f"Ablation evidence saved to {plot_path}")
