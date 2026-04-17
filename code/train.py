@@ -1,39 +1,27 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import os
-from config import EPOCHS, LR, ALPHA_COSINE, DOCS_DIR, DEVICE
-
-class HybridLoss(nn.Module):
-    def __init__(self, alpha=0.5):
-        super(HybridLoss, self).__init__()
-        self.alpha = alpha
-        self.mse = nn.MSELoss()
-        
-    def forward(self, pred, target):
-        mse_loss = self.mse(pred, target)
-        p = pred.squeeze(-1)
-        t = target.squeeze(-1)
-        cos_sim = F.cosine_similarity(p, t, dim=1).mean()
-        cos_loss = 1.0 - cos_sim
-        return (1 - self.alpha) * mse_loss + self.alpha * cos_loss
+from config import EPOCHS, LR, DOCS_DIR, DEVICE
 
 def train_model(model, train_loader, val_loader, L=1):
     model.to(DEVICE)
-    criterion = HybridLoss(alpha=ALPHA_COSINE)
+    # Using standard MSE loss as per academic requirements
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=LR)
     
     train_losses, val_losses = [], []
     
     for epoch in range(EPOCHS):
         model.train()
-        total_loss, hidden = 0, None
+        total_loss = 0
         for i, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
-            if L == 1 or i % L == 0: hidden = None
-            else: hidden = (hidden[0].detach(), hidden[1].detach())
+            
+            # NOTE: Because DataLoader uses shuffle=True, carrying hidden states (L>1) 
+            # across non-contiguous sequences is academically invalid. We enforce hidden=None.
+            hidden = None 
             
             optimizer.zero_grad()
             outputs, hidden = model(inputs, hidden)
@@ -45,6 +33,7 @@ def train_model(model, train_loader, val_loader, L=1):
         avg_train = total_loss / len(train_loader)
         train_losses.append(avg_train)
         
+        # Validation phase
         model.eval()
         v_loss = 0
         with torch.no_grad():
@@ -55,13 +44,19 @@ def train_model(model, train_loader, val_loader, L=1):
         avg_val = v_loss / len(val_loader)
         val_losses.append(avg_val)
         
-        if (epoch + 1) % 20 == 0:
-            print(f"L={L} Epoch {epoch+1} Train: {avg_train:.4f} Val: {avg_val:.4f}")
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch+1}/{EPOCHS} | Train MSE: {avg_train:.6f} | Val MSE: {avg_val:.6f}")
             
+    # Save training trajectory
     plt.figure()
-    plt.plot(train_losses, label='Train')
-    plt.plot(val_losses, label='Val')
-    plt.title(f'Loss (L={L})')
+    plt.plot(train_losses, label='Train MSE')
+    plt.plot(val_losses, label='Val MSE')
+    plt.title(f'Learning Curve (L={L})')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
     plt.savefig(os.path.join(DOCS_DIR, f'loss_L{L}.png'))
     plt.close()
+    
     return model

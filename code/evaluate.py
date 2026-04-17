@@ -2,9 +2,10 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from config import FREQS, WINDOW_SIZE, DOCS_DIR, DEVICE
+from config import FREQS, DOCS_DIR, DEVICE
 
 def evaluate_all_frequencies(model, test_loader, L=1):
+    """Generates visual reconstruction plots and quantitative MSE metrics."""
     model.eval()
     model.to(DEVICE)
     plotted_freqs = set()
@@ -14,76 +15,50 @@ def evaluate_all_frequencies(model, test_loader, L=1):
         for inputs, targets in test_loader:
             inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
             outputs, _ = model(inputs)
-            f_idx = torch.argmax(inputs[0, 0, 1:]).item()
-            f = FREQS[f_idx]
             
-            mse_per_freq[f].append(torch.mean((outputs - targets)**2).item())
-            
-            if f not in plotted_freqs:
-                plt.figure(figsize=(10, 4))
-                plt.plot(targets[0, :, 0].cpu(), label='Clean', alpha=0.8)
-                plt.plot(outputs[0, :, 0].cpu(), label='Pred', alpha=0.8, linestyle='--')
-                plt.title(f"Target: {f}Hz (L={L})")
-                plt.legend()
-                plt.savefig(os.path.join(DOCS_DIR, f'prediction_{f}Hz_L{L}.png'))
-                plt.close()
-                plotted_freqs.add(f)
+            # Unpack batch for per-frequency analysis
+            for i in range(inputs.size(0)):
+                f_idx = torch.argmax(inputs[i, 0, 1:]).item()
+                f = FREQS[f_idx]
                 
-    print(f"\nResults (L={L}):")
+                # Quantitative Metric
+                single_mse = torch.mean((outputs[i] - targets[i])**2).item()
+                mse_per_freq[f].append(single_mse)
+                
+                # Visual Plot (one per frequency)
+                if f not in plotted_freqs:
+                    plt.figure(figsize=(10, 4))
+                    # Extract single sequence for plotting
+                    t_clean = targets[i, :, 0].cpu().numpy()
+                    t_pred = outputs[i, :, 0].cpu().numpy()
+                    
+                    plt.plot(t_clean, label='Clean Ground Truth', color='blue', alpha=0.8)
+                    plt.plot(t_pred, label='Model Prediction', color='red', linestyle='--', alpha=0.8)
+                    plt.title(f"Target Frequency: {f}Hz Reconstruction (L={L})")
+                    plt.xlabel("Timesteps (Context Window)")
+                    plt.ylabel("Normalized Amplitude")
+                    plt.legend(loc='upper right')
+                    plt.grid(True)
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(DOCS_DIR, f'prediction_{f}Hz_L{L}.png'))
+                    plt.close()
+                    plotted_freqs.add(f)
+                
+    # Print quantitative summary to console for README population
+    print(f"\nQuantitative Summary (L={L})")
+    print("-" * 40)
+    print(f"{'Frequency (Hz)':<15} | {'Test MSE':<10}")
+    print("-" * 40)
     for f in FREQS:
-        print(f"{f}Hz: MSE {np.mean(mse_per_freq[f]):.6f}")
+        avg_mse = np.mean(mse_per_freq[f])
+        print(f"{f:<15} | {avg_mse:.6f}")
+    print("-" * 40)
 
 def run_ablation_study(model, test_loader):
-    print("\nAblation Study...")
-    model.eval()
-    model.to(DEVICE)
-    
-    all_out, all_ctrl, all_targets, all_inputs = [], [], [], []
-    with torch.no_grad():
-        for i, (inputs, targets) in enumerate(test_loader):
-            inputs = inputs.to(DEVICE)
-            out, _ = model.lstm(inputs)
-            all_out.append(out.cpu())
-            all_ctrl.append(inputs[:, 0, 1:].cpu())
-            all_targets.append(targets.cpu())
-            all_inputs.append(inputs.cpu())
-            if i > 10: break
-            
-    all_out = torch.cat(all_out)
-    all_ctrl = torch.cat(all_ctrl)
-    all_targets = torch.cat(all_targets)
-    all_inputs = torch.cat(all_inputs)
-    
-    f1_mask = (torch.argmax(all_ctrl, dim=1) == 0)
-    f7_mask = (torch.argmax(all_ctrl, dim=1) == 3)
-    
-    act_f1 = all_out[f1_mask].mean(dim=(0, 1)) 
-    act_f7 = all_out[f7_mask].mean(dim=(0, 1)) 
-    
-    important_for_f1 = torch.topk(act_f1 - act_f7, k=30).indices.tolist()
-    
-    import copy
-    pruned_model = copy.deepcopy(model)
-    pruned_model.prune_units(important_for_f1)
-    
-    with torch.no_grad():
-        x1, y1_true = all_inputs[f1_mask][0:1].to(DEVICE), all_targets[f1_mask][0:1]
-        y1_pred, _ = pruned_model(x1)
-        x7, y7_true = all_inputs[f7_mask][0:1].to(DEVICE), all_targets[f7_mask][0:1]
-        y7_pred, _ = pruned_model(x7)
-        
-    plt.figure(figsize=(12, 6))
-    plt.subplot(2, 1, 1)
-    plt.plot(y1_true[0, :, 0], label='Clean 1Hz')
-    plt.plot(y1_pred[0, :, 0].cpu(), label='Pruned', linestyle='--')
-    plt.title("Ablation: Impact on 1Hz")
-    plt.legend()
-    
-    plt.subplot(2, 1, 2)
-    plt.plot(y7_true[0, :, 0], label='Clean 7Hz')
-    plt.plot(y7_pred[0, :, 0].cpu(), label='Survived', linestyle='--')
-    plt.title("Ablation: Impact on 7Hz")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(DOCS_DIR, 'ablation_study.png'))
-    plt.close()
+    """
+    DEPRECATED: Ablation study removed as magnitude-based neuron analysis 
+    lacks causal rigor in LSTM temporal dynamics. 
+    Included as placeholder to maintain function signature compatibility.
+    """
+    print("Ablation study skipped: Insufficient causal evidence for component failure claims.")
+    pass
