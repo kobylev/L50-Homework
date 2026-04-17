@@ -21,3 +21,8 @@ class LSTMFilter(nn.Module):
         # Predict at every timestep (Sequence-to-Sequence)
         out = self.fc(out)
         return out, hidden
+
+    def prune_units(self, unit_indices):
+        """Zeroes out the fully connected layer's weights for specific LSTM units."""
+        with torch.no_grad():
+            self.fc.weight[:, unit_indices] = 0.0

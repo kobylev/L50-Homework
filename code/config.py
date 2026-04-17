@@ -14,7 +14,7 @@ WINDOW_SIZE = 100
 BATCH_SIZE = 64
 EPOCHS = 50
 LR = 0.001
-L_VALUES = [1] # Forced to 1 due to random window sampling in DataLoader
+L_VALUES = [1, 100] # Reset every batch (L=1) vs carry hidden state across batches (L=100)
 
 # Model Architecture
 INPUT_DIM = 5

@@ -57,7 +57,7 @@ class SignalDataset(Dataset):
         x, y = self.samples[idx]
         return torch.tensor(x), torch.tensor(y)
 
-def get_dataloaders(batch_size=64):
+def get_dataloaders(batch_size=64, shuffle_train=True):
     # Train set generation
     t_train, clean_train, noisy_train, c_clean_train = generate_signals(SEED, FS, DURATION)
     # Test set generation with a separate seed for independence
@@ -66,7 +66,8 @@ def get_dataloaders(batch_size=64):
     train_dataset = SignalDataset(noisy_train, clean_train, WINDOW_SIZE, samples_per_freq=2000)
     test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # shuffle_train=False is required for L > 1 to avoid hidden state leakage across non-contiguous windows
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle_train)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
     # Foundational plots
@@ -80,3 +81,11 @@ def get_dataloaders(batch_size=64):
     plt.close()
     
     return train_loader, test_loader
+
+def get_test_loader_fn(batch_size=64):
+    """Returns a function that generates a test loader for a specific seed."""
+    def _get_test_loader(seed):
+        _, clean_test, noisy_test, _ = generate_signals(seed, FS, DURATION)
+        test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
+        return DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return _get_test_loader

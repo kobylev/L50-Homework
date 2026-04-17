@@ -16,12 +16,17 @@ def train_model(model, train_loader, val_loader, L=1):
     for epoch in range(EPOCHS):
         model.train()
         total_loss = 0
+        hidden = None
+        
         for i, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
             
-            # NOTE: Because DataLoader uses shuffle=True, carrying hidden states (L>1) 
-            # across non-contiguous sequences is academically invalid. We enforce hidden=None.
-            hidden = None 
+            # Reset hidden state every L batches to test memory truncation
+            if L == 1 or i % L == 0:
+                hidden = None
+            else:
+                # Carry hidden state but detach from previous computational graph
+                hidden = (hidden[0].detach(), hidden[1].detach())
             
             optimizer.zero_grad()
             outputs, hidden = model(inputs, hidden)
