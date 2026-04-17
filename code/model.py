@@ -15,11 +15,7 @@ class LSTMFilter(nn.Module):
         return out, hidden
 
     def prune_units(self, unit_indices):
-        """
-        Artificially zero out the hidden weights corresponding to specific units.
-        Used for the Ablation Study to prove frequency localization.
-        """
+        """Zeroes out linear weights to simulate component failure."""
         with torch.no_grad():
-            # Zeroing out rows in the output linear layer for these units
             self.fc.weight[:, unit_indices] = 0.0
-            self.fc.bias[:] = 0.0 # Reset bias to avoid constant offsets during ablation
+            self.fc.bias[:] = 0.0
