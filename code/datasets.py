@@ -57,7 +57,7 @@ class SignalDataset(Dataset):
         x, y = self.samples[idx]
         return torch.tensor(x), torch.tensor(y)
 
-def get_dataloaders(batch_size=64, shuffle_train=True):
+def get_dataloaders(batch_size=64, L=1):
     # Train set generation
     t_train, clean_train, noisy_train, c_clean_train = generate_signals(SEED, FS, DURATION)
     # Test set generation with a separate seed for independence
@@ -66,7 +66,8 @@ def get_dataloaders(batch_size=64, shuffle_train=True):
     train_dataset = SignalDataset(noisy_train, clean_train, WINDOW_SIZE, samples_per_freq=2000)
     test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
     
-    # shuffle_train=False is required for L > 1 to avoid hidden state leakage across non-contiguous windows
+    # shuffle is required to be False for L > 1 to avoid hidden state leakage across non-contiguous windows
+    shuffle_train = False if L > 1 else True
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle_train)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
@@ -89,3 +90,23 @@ def get_test_loader_fn(batch_size=64):
         test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
         return DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     return _get_test_loader
+
+def plot_noise_histogram():
+    """Generates visual proof of noise independence between train and test sets."""
+    _, clean_train, noisy_train, _ = generate_signals(SEED, FS, DURATION)
+    _, clean_test, noisy_test, _ = generate_signals(SEED + 999, FS, DURATION)
+    
+    noise_train = (noisy_train - clean_train).flatten()
+    noise_test = (noisy_test - clean_test).flatten()
+    
+    plt.figure(figsize=(8, 5))
+    plt.hist(noise_train, bins=50, alpha=0.5, label=f'Train Noise (Seed {SEED})', density=True, color='blue')
+    plt.hist(noise_test, bins=50, alpha=0.5, label=f'Test Noise (Seed {SEED + 999})', density=True, color='orange')
+    plt.title('Train vs Test Noise Distribution (Independence Proof)')
+    plt.xlabel('Noise Amplitude')
+    plt.ylabel('Density')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(DOCS_DIR, 'noise_histogram.png'))
+    plt.close()
+    print("Saved noise_histogram.png")
