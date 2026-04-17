@@ -1,4 +1,4 @@
-# ACADEMIC RESEARCH REPORT: Conditional LSTM Bandpass Filter for Targeted Signal Extraction
+# Conditional LSTM Bandpass Filter for Targeted Signal Extraction
 
 ## Abstract & Research Objective
 This project explores the use of Long Short-Term Memory (LSTM) networks as dynamic, conditional bandpass filters capable of extracting specific periodic signals from an environment characterized by heavy, destructive noise. Unlike traditional signal processing techniques (e.g., Fourier-based filtering), which rely on static frequency cutoffs, this approach leverages an LSTM's ability to learn temporal correlations conditioned on a user-provided dynamic **Control Vector**. The primary research objective is to empirically demonstrate that an LSTM, parameterized with a frequent hidden-state reset policy ($L=1$), can act as an ensemble of frequency-specific filters to isolate a targeted wave from a multi-frequency composite signal.
