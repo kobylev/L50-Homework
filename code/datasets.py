@@ -31,10 +31,6 @@ def generate_signals(seed, fs=1000, duration=10):
     combined_noisy = np.sum(noisy_signals, axis=0) / 4.0
     combined_clean = np.sum(clean_signals, axis=0) / 4.0
     
-    # Normalization logic fix: The individual clean signals must also be normalized
-    # by 4 to match the scale of the composite signal, ensuring proper MSE convergence.
-    clean_signals = clean_signals / 4.0
-    
     return t, clean_signals, combined_noisy, combined_clean
 
 class SignalDataset(Dataset):

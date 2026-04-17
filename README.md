@@ -34,18 +34,18 @@ The filtering objective is formulated as a conditional sequence-to-sequence reco
 The model successfully tracks the phase and period across all targeted frequencies, demonstrating its capability as a robust conditional bandpass filter.
 
 ![1Hz Prediction](./docs/prediction_1Hz.png)
-*1Hz: MSE = 0.692537 ± 0.359430*
+*1Hz: MSE = 0.376926 ± 0.021725*
 
 ![3Hz Prediction](./docs/prediction_3Hz.png)
-*3Hz: MSE = 0.743072 ± 0.308176*
+*3Hz: MSE = 0.350517 ± 0.018717*
 
 ![5Hz Prediction](./docs/prediction_5Hz.png)
-*5Hz: MSE = 0.651278 ± 0.265390*
+*5Hz: MSE = 0.339897 ± 0.034103*
 
 ![7Hz Prediction](./docs/prediction_7Hz.png)
-*7Hz: MSE = 0.709902 ± 0.514883*
+*7Hz: MSE = 0.195043 ± 0.027865*
 
-**Figure 2:** Prediction overlays for all target frequencies. The red dashed line (model output) demonstrates high-fidelity reconstruction of the blue line (clean target ground-truth) despite the heavy composite noise.
+**Figure 2:** Prediction overlays for all target frequencies. The red dashed line (model output) demonstrates high-fidelity reconstruction of the blue line (clean target ground-truth) despite the heavy composite noise. MSE values shown are aggregated over 5 independent random seeds (L=1).
 
 ### 3. Window Size Expansion
 A comprehensive ablation study strictly comparing multiple window sizes (e.g., window=10 vs. window=100) to further mathematically justify the optimal context boundaries is relegated to Future Work.
@@ -66,10 +66,10 @@ This project performed a rigorous temporal comparison of the hidden state manage
 ### 6. Quantitative Evaluation (Statistical Aggregation)
 | Frequency | L=1 (MSE ± Std) | L=100 (MSE ± Std) |
 |-----------|-----------------|-------------------|
-| 1 Hz      | 0.020764 ± 0.001927 | 0.023461 ± 0.001183 |
-| 3 Hz      | 0.021895 ± 0.000958 | 0.022225 ± 0.001022 |
-| 5 Hz      | 0.022949 ± 0.002553 | 0.023219 ± 0.002069 |
-| 7 Hz      | 0.023985 ± 0.001429 | 0.024839 ± 0.002026 |
+| 1 Hz      | 0.376926 ± 0.021725 | 0.362093 ± 0.026019 |
+| 3 Hz      | 0.350517 ± 0.018717 | 0.355196 ± 0.015163 |
+| 5 Hz      | 0.339897 ± 0.034103 | 0.371771 ± 0.031759 |
+| 7 Hz      | 0.195043 ± 0.027865 | 0.400884 ± 0.019880 |
 
 ## Limitations & Conclusions
 1. **Context Initialization:** Performance is intrinsically lower at the onset of each window due to the lack of historical sequence data.
@@ -77,10 +77,7 @@ This project performed a rigorous temporal comparison of the hidden state manage
 3. **Representation Sparsity:** The ablation study confirms that a significant portion of the network capacity is dedicated to frequency-specific logic.
 
 ## Execution Guide
-1. **Environment:** Python 3.10+ and PyTorch 2.0+.
-2. **Installation:** `pip install -r requirements.txt`.
-3. **Pipeline Execution:** `python code/main.py`.
-4. **Output Verification:** All supporting visualizations are saved to the `docs/` directory.
-nstall -r requirements.txt`.
-3. **Pipeline Execution:** `python code/main.py`.
-4. **Output Verification:** All supporting visualizations are saved to the `docs/` directory.
+1. Clone: `git clone https://github.com/kobylev/L50-Homework`
+2. Install: `pip install -r requirements.txt`
+3. Run: `python code/main.py`
+4. Outputs: All plots and metrics are saved to the `docs/` folder.
