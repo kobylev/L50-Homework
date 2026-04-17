@@ -1,57 +1,136 @@
 import torch
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 import os
+from config import FREQS, WINDOW_SIZE, DOCS_DIR, DEVICE
 
-from config import DOCS_DIR, WINDOW_SIZE
-
-def evaluate_and_plot(model, t, clean_signals, combined_noisy):
+def evaluate_all_frequencies(model, test_loader, L=1):
     model.eval()
+    model.to(DEVICE)
     
-    # We will pick a continuous segment to visualize the network's prediction.
-    # We will request frequency 3Hz (idx 1).
-    target_idx = 1
-    freq = 3
+    mse_per_freq = {f: [] for f in FREQS}
+    mae_per_freq = {f: [] for f in FREQS}
     
-    start_time_idx = 0
-    end_time_idx = 1000 # 1 second
-    
-    predictions = []
-    ground_truth = []
+    # We want to save an example plot for each frequency
+    plotted_freqs = set()
     
     with torch.no_grad():
-        # Using sliding window over the continuous segment
-        for i in range(start_time_idx, end_time_idx - WINDOW_SIZE + 1):
-            window_noisy = combined_noisy[i : i + WINDOW_SIZE]
-            control_vec = np.zeros((WINDOW_SIZE, 4), dtype=np.float32)
-            control_vec[:, target_idx] = 1.0
+        for inputs, targets in test_loader:
+            inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
+            outputs, _ = model(inputs)
             
-            x = np.zeros((WINDOW_SIZE, 5), dtype=np.float32)
-            x[:, 0] = window_noisy
-            x[:, 1:] = control_vec
+            # Figure out which frequency is being requested from the Control Vector (one-hot)
+            # Input shape: (Batch, Seq, 5). Control is bits 1-4.
+            # Just look at the first sample in the batch's control vector at time step 0.
+            ctrl = inputs[0, 0, 1:]
+            f_idx = torch.argmax(ctrl).item()
+            f = FREQS[f_idx]
             
-            x_tensor = torch.tensor(x).unsqueeze(0) # (1, 10, 5)
+            mse = torch.mean((outputs - targets)**2).item()
+            mae = torch.mean(torch.abs(outputs - targets)).item()
             
-            output, _ = model(x_tensor)
+            mse_per_freq[f].append(mse)
+            mae_per_freq[f].append(mae)
             
-            # We take the prediction for the FIRST time step in the window to form a continuous line
-            # actually taking the last time step is more conventional for causal filters, 
-            # let's take the last step of the window: i + WINDOW_SIZE - 1
-            predictions.append(output[0, -1, 0].item())
-            ground_truth.append(clean_signals[target_idx, i + WINDOW_SIZE - 1])
-            
-    time_axis = t[WINDOW_SIZE - 1 : end_time_idx]
+            # Plot one example per frequency
+            if f not in plotted_freqs:
+                plt.figure(figsize=(10, 4))
+                plt.plot(targets[0, :, 0].cpu(), label='Clean Ground Truth', color='blue', alpha=0.8)
+                plt.plot(outputs[0, :, 0].cpu(), label='LSTM Prediction', color='red', linestyle='--', alpha=0.8)
+                plt.title(f"Target Extraction: {f}Hz (L={L})")
+                plt.legend()
+                plt.savefig(os.path.join(DOCS_DIR, f'prediction_{f}Hz_L{L}.png'))
+                plt.close()
+                plotted_freqs.add(f)
+                
+    # Average results
+    print(f"\nQuantitative Evaluation (L={L}):")
+    print(f"{'Freq (Hz)':<10} | {'MSE':<10} | {'MAE':<10}")
+    print("-" * 35)
+    for f in FREQS:
+        avg_mse = np.mean(mse_per_freq[f])
+        avg_mae = np.mean(mae_per_freq[f])
+        print(f"{f:<10} | {avg_mse:.6f} | {avg_mae:.6f}")
+
+def run_ablation_study(model, test_loader):
+    """
+    Ablation Study:
+    1. Identify hidden units that are highly sensitive to specific frequencies.
+    2. Prune them and show frequency-specific failure.
+    """
+    print("\nStarting Ablation Study...")
+    model.eval()
+    model.to(DEVICE)
     
+    # Collect all activations for analysis
+    all_out = []
+    all_ctrl = []
+    all_targets = []
+    all_inputs = []
+    
+    with torch.no_grad():
+        for i, (inputs, targets) in enumerate(test_loader):
+            inputs = inputs.to(DEVICE)
+            out, _ = model.lstm(inputs)
+            all_out.append(out.cpu())
+            all_ctrl.append(inputs[:, 0, 1:].cpu())
+            all_targets.append(targets.cpu())
+            all_inputs.append(inputs.cpu())
+            if i > 10: break # Use enough data for analysis
+            
+    all_out = torch.cat(all_out)
+    all_ctrl = torch.cat(all_ctrl)
+    all_targets = torch.cat(all_targets)
+    all_inputs = torch.cat(all_inputs)
+    
+    # 1Hz is index 0, 7Hz is index 3
+    f1_mask = (torch.argmax(all_ctrl, dim=1) == 0)
+    f7_mask = (torch.argmax(all_ctrl, dim=1) == 3)
+    
+    if not any(f1_mask) or not any(f7_mask):
+        print("Ablation study failed: Could not find both 1Hz and 7Hz in the test set.")
+        return
+
+    # Mean activation per hidden unit for 1Hz vs 7Hz
+    act_f1 = all_out[f1_mask].mean(dim=(0, 1)) 
+    act_f7 = all_out[f7_mask].mean(dim=(0, 1)) 
+    
+    # Neurons that are much more active for 1Hz than 7Hz
+    diff = act_f1 - act_f7
+    important_for_f1 = torch.topk(diff, k=30).indices.tolist()
+    
+    print(f"Pruning {len(important_for_f1)} units identified as sensitive to 1Hz...")
+    import copy
+    pruned_model = copy.deepcopy(model)
+    pruned_model.prune_units(important_for_f1)
+    
+    # Show 1Hz failure but 7Hz survival
+    with torch.no_grad():
+        # Prediction for 1Hz
+        x1 = all_inputs[f1_mask][0:1].to(DEVICE)
+        y1_true = all_targets[f1_mask][0:1]
+        y1_pred, _ = pruned_model(x1)
+        
+        # Prediction for 7Hz
+        x7 = all_inputs[f7_mask][0:1].to(DEVICE)
+        y7_true = all_targets[f7_mask][0:1]
+        y7_pred, _ = pruned_model(x7)
+        
+    # Plotting Ablation Results
     plt.figure(figsize=(12, 6))
-    plt.plot(time_axis, ground_truth, label=f'Ground Truth Clean ({freq}Hz)', color='blue')
-    plt.plot(time_axis, predictions, label='LSTM Prediction', color='red', linestyle='--')
-    # highlight error margin
-    error = np.abs(np.array(ground_truth) - np.array(predictions))
-    plt.fill_between(time_axis, ground_truth, predictions, color='red', alpha=0.2, label='Error Margin')
-    plt.title(f'LSTM Target Extraction: Predicted vs. Ground Truth ({freq}Hz)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Amplitude')
+    plt.subplot(2, 1, 1)
+    plt.plot(y1_true[0, :, 0], label='Clean 1Hz', color='blue')
+    plt.plot(y1_pred[0, :, 0].cpu(), label='Pruned Prediction (Failed)', color='red', linestyle='--')
+    plt.title("Ablation: Pruning 1Hz-Sensitive Neurons (Effect on 1Hz)")
     plt.legend()
+    
+    plt.subplot(2, 1, 2)
+    plt.plot(y7_true[0, :, 0], label='Clean 7Hz', color='blue')
+    plt.plot(y7_pred[0, :, 0].cpu(), label='Pruned Prediction (Survived)', color='green', linestyle='--')
+    plt.title("Ablation: Pruning 1Hz-Sensitive Neurons (Effect on 7Hz)")
+    plt.legend()
+    
     plt.tight_layout()
-    plt.savefig(os.path.join(DOCS_DIR, 'prediction.png'))
+    plt.savefig(os.path.join(DOCS_DIR, 'ablation_study.png'))
     plt.close()
+    print("Ablation plot saved as docs/ablation_study.png")

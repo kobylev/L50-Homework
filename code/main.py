@@ -1,23 +1,29 @@
-from config import BATCH_SIZE, INPUT_DIM, HIDDEN_DIM, NUM_LAYERS
+import torch
+from config import BATCH_SIZE, INPUT_DIM, HIDDEN_DIM, NUM_LAYERS, L_VALUES
 from datasets import get_dataloaders
 from model import LSTMFilter
 from train import train_model
-from evaluate import evaluate_and_plot
+from evaluate import evaluate_all_frequencies, run_ablation_study
 
 def main():
-    print("Initializing Data Loaders and Generating Signals...")
-    train_loader, val_loader, t, clean_signals, combined_noisy = get_dataloaders(BATCH_SIZE)
+    # 1. Prepare Data
+    print("Preparing Datasets (Independent Train/Test Noise)...")
+    train_loader, test_loader, test_meta = get_dataloaders(BATCH_SIZE)
     
-    print("Initializing Model...")
-    model = LSTMFilter(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, num_layers=NUM_LAYERS)
-    
-    print("Starting Training...")
-    model = train_model(model, train_loader, val_loader)
-    
-    print("Evaluating and Generating Plots...")
-    evaluate_and_plot(model, t, clean_signals, combined_noisy)
-    
-    print("Process Complete. Check 'docs/' for outputs.")
+    # 2. Train and Evaluate for different L values
+    for L in L_VALUES:
+        print(f"\n--- Training with L={L} ---")
+        model = LSTMFilter(INPUT_DIM, HIDDEN_DIM, NUM_LAYERS)
+        model = train_model(model, train_loader, test_loader, L=L)
+        
+        print(f"\nEvaluating All Target Frequencies (L={L})...")
+        evaluate_all_frequencies(model, test_loader, L=L)
+        
+        # Run Ablation Study on the last trained model (usually L=100 is more stable)
+        if L == 100:
+            run_ablation_study(model, test_loader)
+
+    print("\nAll tasks complete. Images saved in 'docs/' folder.")
 
 if __name__ == "__main__":
     main()

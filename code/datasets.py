@@ -3,21 +3,19 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import os
+from config import FS, DURATION, FREQS, WINDOW_SIZE, DOCS_DIR, SEED
 
-from config import FS, DURATION, DOCS_DIR, WINDOW_SIZE, DATASET_SIZE
-
-def generate_signals():
-    t = np.linspace(0, DURATION, int(FS * DURATION), endpoint=False)
-    freqs = [1, 3, 5, 7]
+def generate_independent_signals(fs=1000, duration=10):
+    t = np.linspace(0, duration, int(fs * duration), endpoint=False)
     clean_signals = []
     noisy_signals = []
     
-    for f in freqs:
+    for f in FREQS:
         # Base amplitude 1
         clean = np.sin(2 * np.pi * f * t)
         clean_signals.append(clean)
         
-        # Noise injection
+        # Noise injection (randomization ensures independence)
         amp = np.random.uniform(0.8, 1.2)
         phase = np.random.uniform(0, 2 * np.pi)
         noisy = amp * np.sin(2 * np.pi * f * t + phase)
@@ -26,85 +24,85 @@ def generate_signals():
     clean_signals = np.array(clean_signals)
     noisy_signals = np.array(noisy_signals)
     
-    # Combined Noisy Signal
-    combined_noisy = np.sum(noisy_signals, axis=0) / 4.0
-    combined_clean = np.sum(clean_signals, axis=0) / 4.0
+    # Combined Noisy Signal (normalized by sum count)
+    combined_noisy = np.sum(noisy_signals, axis=0) / len(FREQS)
+    combined_clean = np.sum(clean_signals, axis=0) / len(FREQS)
     
-    # Plotting: 4 individual clean vs noisy
-    fig, axes = plt.subplots(4, 1, figsize=(12, 8), sharex=True)
-    for i in range(4):
-        axes[i].plot(t[:1000], clean_signals[i][:1000], label='Clean', color='blue', alpha=0.7)
-        axes[i].plot(t[:1000], noisy_signals[i][:1000], label='Noisy', color='red', linestyle='--', alpha=0.7)
-        axes[i].set_ylabel(f'{freqs[i]}Hz')
-        axes[i].legend(loc='upper right')
-    axes[-1].set_xlabel('Time (s)')
-    fig.suptitle('Individual Clean vs. Noisy Signals (First 1 second)')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DOCS_DIR, 'clean_vs_noisy.png'))
-    plt.close()
-    
-    # Plotting: Combined Noisy vs Combined Clean
-    plt.figure(figsize=(12, 4))
-    plt.plot(t[:1000], combined_clean[:1000], label='Combined Clean', color='blue')
-    plt.plot(t[:1000], combined_noisy[:1000], label='Combined Noisy', color='red', linestyle='--', alpha=0.7)
-    plt.title('Combined Clean vs. Combined Noisy Signal (First 1 second)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Amplitude')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(DOCS_DIR, 'combined_signals.png'))
-    plt.close()
-    
-    return t, clean_signals, combined_noisy
+    return t, clean_signals, combined_noisy, combined_clean
 
 class SignalDataset(Dataset):
-    def __init__(self, combined_noisy, clean_signals, window_size=10, num_samples=10000):
+    def __init__(self, combined_noisy, clean_signals, window_size=100, samples_per_freq=1000):
         self.window_size = window_size
-        self.combined_noisy = combined_noisy
-        self.clean_signals = clean_signals
-        self.num_samples = num_samples
-        self.max_idx = len(combined_noisy) - window_size
+        self.samples = []
         
+        n_total = len(combined_noisy)
+        
+        for f_idx in range(len(FREQS)):
+            # Pre-select deterministic starting points for each frequency to ensure full coverage
+            # and reproducibility within the provided signal length.
+            indices = np.random.choice(n_total - window_size, samples_per_freq, replace=False)
+            
+            for start_idx in indices:
+                # Noisy window
+                x_win = combined_noisy[start_idx : start_idx + window_size]
+                
+                # Control Vector (One-Hot)
+                c_vec = np.zeros((window_size, 4), dtype=np.float32)
+                c_vec[:, f_idx] = 1.0
+                
+                # Final X input (sequence_len, 5)
+                x = np.column_stack((x_win, c_vec))
+                
+                # Label y window
+                y = clean_signals[f_idx, start_idx : start_idx + window_size].reshape(-1, 1)
+                
+                self.samples.append((x.astype(np.float32), y.astype(np.float32)))
+                
     def __len__(self):
-        return self.num_samples
+        return len(self.samples)
     
     def __getitem__(self, idx):
-        # Randomly pick a starting index
-        start_idx = np.random.randint(0, self.max_idx)
-        
-        # Extract 10-sample window from Combined Noisy Signal
-        window_noisy = self.combined_noisy[start_idx : start_idx + self.window_size]
-        
-        # Randomly select a target frequency (0 to 3)
-        target_idx = np.random.randint(0, 4)
-        
-        # Create Control Vector C (length 4)
-        control_vec = np.zeros((self.window_size, 4), dtype=np.float32)
-        control_vec[:, target_idx] = 1.0
-        
-        # Network Input X: (10, 5)
-        x = np.zeros((self.window_size, 5), dtype=np.float32)
-        x[:, 0] = window_noisy
-        x[:, 1:] = control_vec
-        
-        # Label Y: corresponding 10-sample window from the *clean* target sine wave
-        y = self.clean_signals[target_idx, start_idx : start_idx + self.window_size]
-        
-        # Need y to have shape (window_size, 1) to match output
-        y = y.reshape(self.window_size, 1).astype(np.float32)
-        
+        x, y = self.samples[idx]
         return torch.tensor(x), torch.tensor(y)
 
-def get_dataloaders(batch_size):
-    t, clean_signals, combined_noisy = generate_signals()
+def get_dataloaders(batch_size=64):
+    np.random.seed(SEED)
     
-    dataset = SignalDataset(combined_noisy, clean_signals, WINDOW_SIZE, DATASET_SIZE)
+    # Generate Train data
+    t_train, clean_train, noisy_train, combined_clean_train = generate_independent_signals(FS, DURATION)
     
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    # Generate Test data (independent noise realizations)
+    t_test, clean_test, noisy_test, combined_clean_test = generate_independent_signals(FS, DURATION)
+    
+    train_dataset = SignalDataset(noisy_train, clean_train, WINDOW_SIZE, samples_per_freq=2000)
+    test_dataset = SignalDataset(noisy_test, clean_test, WINDOW_SIZE, samples_per_freq=500)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
-    return train_loader, test_loader, t, clean_signals, combined_noisy
+    # Initial plots for documentation
+    save_initial_plots(t_train, clean_train, noisy_train, combined_clean_train)
+    
+    return train_loader, test_loader, (t_test, clean_test, noisy_test, combined_clean_test)
+
+def save_initial_plots(t, clean, combined_noisy, combined_clean):
+    # Plotting first 1s for clarity
+    limit = 1000
+    
+    plt.figure(figsize=(10, 6))
+    for i in range(len(FREQS)):
+        plt.subplot(len(FREQS), 1, i+1)
+        plt.plot(t[:limit], clean[i][:limit], label='Clean')
+        plt.title(f"{FREQS[i]}Hz Signal")
+        plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(DOCS_DIR, 'clean_signals.png'))
+    plt.close()
+
+    plt.figure(figsize=(12, 4))
+    plt.plot(t[:limit], combined_clean[:limit], label='Combined Clean', alpha=0.8)
+    plt.plot(t[:limit], combined_noisy[:limit], label='Combined Noisy', alpha=0.5, linestyle='--')
+    plt.title("Combined Clean vs. Combined Noisy (Sum/4)")
+    plt.legend()
+    plt.savefig(os.path.join(DOCS_DIR, 'combined_signals.png'))
+    plt.close()
