@@ -62,6 +62,12 @@ The model's performance was measured using Mean Squared Error (MSE) on an indepe
 
 *Note: Metrics vary slightly between runs due to random noise initialization.*
 
+#### Empirical Findings & Advanced Implementations
+
+- **Window Size Expansion (100 Samples):** Expanding the temporal receptive field to 100 samples significantly improved phase estimation. It provided the LSTM with sufficient sequence history to capture multiple zero-crossings for higher frequencies and meaningful curve derivatives for the 1Hz signal.
+- **Custom Hybrid Loss Impact:** The Hybrid Loss (combining Mean Squared Error and Cosine Similarity) successfully prevented "amplitude hedging" (where the model conservatively predicts the mean to safely minimize MSE) by explicitly enforcing strict topological alignment and phase coherence with the target wave.
+- **Hidden State Pruning (Ablation Study):** The targeted ablation study proved that the LSTM partitions its hidden dimensions into frequency-specific sub-ensembles. By zeroing out the specific neurons most sensitive to 1Hz dynamics, we completely killed the model's ability to extract 1Hz (resulting in a flattened output), while retaining near-perfect 7Hz extraction capabilities.
+
 ## Limitations and Critical Observations
 1. **Context Starvation:** The initial samples of each window show slightly higher error because the LSTM has zero previous history at the start of the 100-sample block.
 2. **Static Noise Model:** Phase and amplitude noise are currently static across the 10-second duration. A more rigorous test would involve dynamic phase drift (Brownian noise).
