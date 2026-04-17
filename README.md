@@ -34,16 +34,16 @@ The filtering objective is formulated as a conditional sequence-to-sequence reco
 The model successfully tracks the phase and period across all targeted frequencies, demonstrating its capability as a robust conditional bandpass filter.
 
 ![1Hz Prediction](./docs/prediction_1Hz.png)
-*1Hz: MSE = 0.376926 ± 0.021725*
+*1Hz: MSE = 0.263443 ± 0.040407*
 
 ![3Hz Prediction](./docs/prediction_3Hz.png)
-*3Hz: MSE = 0.350517 ± 0.018717*
+*3Hz: MSE = 0.329010 ± 0.058545*
 
 ![5Hz Prediction](./docs/prediction_5Hz.png)
-*5Hz: MSE = 0.339897 ± 0.034103*
+*5Hz: MSE = 0.302457 ± 0.055672*
 
 ![7Hz Prediction](./docs/prediction_7Hz.png)
-*7Hz: MSE = 0.195043 ± 0.027865*
+*7Hz: MSE = 0.154330 ± 0.025615*
 
 **Figure 2:** Prediction overlays for all target frequencies. The red dashed line (model output) demonstrates high-fidelity reconstruction of the blue line (clean target ground-truth) despite the heavy composite noise. MSE values shown are aggregated over 5 independent random seeds (L=1).
 
@@ -66,10 +66,10 @@ This project performed a rigorous temporal comparison of the hidden state manage
 ### 6. Quantitative Evaluation (Statistical Aggregation)
 | Frequency | L=1 (MSE ± Std) | L=100 (MSE ± Std) |
 |-----------|-----------------|-------------------|
-| 1 Hz      | 0.376926 ± 0.021725 | 0.362093 ± 0.026019 |
-| 3 Hz      | 0.350517 ± 0.018717 | 0.355196 ± 0.015163 |
-| 5 Hz      | 0.339897 ± 0.034103 | 0.371771 ± 0.031759 |
-| 7 Hz      | 0.195043 ± 0.027865 | 0.400884 ± 0.019880 |
+| 1 Hz      | 0.263443 ± 0.040407 | 0.346489 ± 0.024640 |
+| 3 Hz      | 0.329010 ± 0.058545 | 0.359441 ± 0.013500 |
+| 5 Hz      | 0.302457 ± 0.055672 | 0.367860 ± 0.029867 |
+| 7 Hz      | 0.154330 ± 0.025615 | 0.362231 ± 0.028436 |
 
 ## Limitations & Conclusions
 1. **Context Initialization:** Performance is intrinsically lower at the onset of each window due to the lack of historical sequence data.
